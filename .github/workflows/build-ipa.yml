@@ -22,6 +22,19 @@ jobs:
             git submodule update --init --recursive -- "$P"
           done
 
+      - name: Fetch Nuvio Engine (Apple XCFramework, needed for Full + plugins)
+        run: |
+          DEST=../nuvio-engine/platform/apple
+          mkdir -p "$DEST" /tmp/engine/x
+          curl -fL -o /tmp/engine/engine.zip https://github.com/NuvioMedia/nuvio-engine/releases/download/v0.1.0/nuvio-engine-apple-0.1.0.zip
+          unzip -q /tmp/engine/engine.zip -d /tmp/engine/x
+          XC=$(find /tmp/engine/x -type d -name "*.xcframework" | head -n 1)
+          echo "Found XCFramework: $XC"
+          rm -rf "$DEST/NuvioEngine.xcframework"
+          cp -R "$XC" "$DEST/NuvioEngine.xcframework"
+          ls -R "$DEST/NuvioEngine.xcframework" | head -n 40
+          test -f "$DEST/NuvioEngine.xcframework/ios-arm64/libCNuvioEngine.a"
+
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -53,7 +66,7 @@ jobs:
       - name: Apply Amphetamine text customizations
         run: |
           find composeApp -name "strings.xml" -path "*composeResources*" | while read F; do
-            sed -i '' '/compose_about_made_with/s/❤/💜/' "$F"
+            sed -i '' '/compose_about_made_with/s/❤️/💜/' "$F"
             sed -i '' 's/Tapframe and friends/Hamoudi/g' "$F"
           done
           grep -rh "compose_about_made_with" composeApp --include=strings.xml | head -n 3
@@ -75,7 +88,7 @@ jobs:
 
       - name: Build iOS app (device, unsigned)
         env:
-          NUVIO_IOS_DISTRIBUTION: appstore
+          NUVIO_IOS_DISTRIBUTION: full
         run: |
           chmod +x gradlew
           set -o pipefail
