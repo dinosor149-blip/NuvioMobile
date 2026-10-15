@@ -1,7 +1,7 @@
 name: Build Amphetamine IPA
 
 on:
-  workflow_dispatch:   # تشغيل يدوي من تبويب Actions
+  workflow_dispatch:
 
 jobs:
   build:
@@ -9,11 +9,18 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           lfs: true
+
+      - name: Init valid submodules only (skip broken libass-android)
+        run: |
+          git config -f .gitmodules --get-regexp '\.path$' | awk '{print $2}' | while read P; do
+            echo "Init submodule: $P"
+            git submodule update --init --recursive -- "$P"
+          done
 
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
