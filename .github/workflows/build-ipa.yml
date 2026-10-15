@@ -75,7 +75,7 @@ jobs:
 
       - name: Build iOS app (device, unsigned)
         env:
-          NUVIO_IOS_DISTRIBUTION: full
+          NUVIO_IOS_DISTRIBUTION: appstore
         run: |
           chmod +x gradlew
           set -o pipefail
