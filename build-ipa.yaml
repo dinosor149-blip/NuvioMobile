@@ -1,0 +1,106 @@
+name: Build Amphetamine IPA
+
+on:
+  workflow_dispatch:   # تشغيل يدوي من تبويب Actions
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Java 17 (for Kotlin/Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle & Kotlin Native
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/**') }}
+
+      - name: Apply Amphetamine source overrides
+        run: |
+          BASE=composeApp/src/commonMain/kotlin/com/nuvio/app
+          if [ -f SettingsRootPage.kt ]; then cp SettingsRootPage.kt $BASE/features/settings/SettingsRootPage.kt && echo "Settings page replaced"; fi
+          if [ -f ThemeColors.kt ]; then cp ThemeColors.kt $BASE/core/ui/ThemeColors.kt && echo "Theme replaced"; fi
+          if [ -f Theme.kt ]; then cp Theme.kt $BASE/core/ui/Theme.kt && echo "Theme + intro animation replaced"; fi
+          rm -f SettingsRootPage.kt ThemeColors.kt Theme.kt
+
+      - name: Apply Amphetamine text customizations
+        run: |
+          find composeApp -name "strings.xml" -path "*composeResources*" | while read F; do
+            sed -i '' '/compose_about_made_with/s/❤️/💜/' "$F"
+            sed -i '' 's/Tapframe and friends/Hamoudi/g' "$F"
+          done
+          grep -rh "compose_about_made_with" composeApp --include=strings.xml | head -n 3
+
+      - name: Apply custom app icon (amphetamine-icon.png)
+        run: |
+          if [ -f amphetamine-icon.png ]; then
+            find iosApp -type d -name "AppIcon*.appiconset" | while read SET; do
+              echo "Updating icons in $SET"
+              find "$SET" -name "*.png" | while read IMG; do
+                W=$(sips -g pixelWidth "$IMG" | awk '/pixelWidth/{print $2}')
+                cp amphetamine-icon.png "$IMG"
+                sips -z "$W" "$W" "$IMG" >/dev/null
+              done
+            done
+          else
+            echo "No amphetamine-icon.png found, keeping original icon"
+          fi
+
+      - name: Build iOS app (device, unsigned)
+        env:
+          NUVIO_IOS_DISTRIBUTION: full
+        run: |
+          chmod +x gradlew
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Rebrand app name (Amphetamine)
+        run: |
+          APP=$(find build/ios/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          PLIST="$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Amphetamine" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Amphetamine" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Amphetamine" "$PLIST" || true
+
+      - name: Package IPA
+        run: |
+          APP=$(find build/ios/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          echo "Found app: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Amphetamine.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Amphetamine-ipa
+          path: Amphetamine.ipa
