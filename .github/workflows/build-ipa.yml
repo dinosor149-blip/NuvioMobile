@@ -27,11 +27,11 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Setup Java 17 (for Kotlin/Gradle)
+      - name: Setup Java 21 (for Kotlin/Gradle)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Cache Gradle & Kotlin Native
         uses: actions/cache@v4
@@ -53,7 +53,7 @@ jobs:
       - name: Apply Amphetamine text customizations
         run: |
           find composeApp -name "strings.xml" -path "*composeResources*" | while read F; do
-            sed -i '' '/compose_about_made_with/s/❤️/💜/' "$F"
+            sed -i '' '/compose_about_made_with/s/❤/💜/' "$F"
             sed -i '' 's/Tapframe and friends/Hamoudi/g' "$F"
           done
           grep -rh "compose_about_made_with" composeApp --include=strings.xml | head -n 3
@@ -78,7 +78,8 @@ jobs:
           NUVIO_IOS_DISTRIBUTION: full
         run: |
           chmod +x gradlew
-          xcodebuild \
+          set -o pipefail
+          if ! xcodebuild \
             -project iosApp/iosApp.xcodeproj \
             -scheme iosApp \
             -configuration Release \
@@ -88,7 +89,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee build.log; then
+            echo "## Build errors" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E "error:|^e: |FAILURE|What went wrong|Could not|BUILD FAILED" build.log | head -n 60 >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "## Last lines" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 40 build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Upload build log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
 
       - name: Rebrand app name (Amphetamine)
         run: |
